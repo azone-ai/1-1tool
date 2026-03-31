@@ -8,9 +8,18 @@ from pathlib import Path
 
 TASK_INDEX_START_LINE = 513
 BINARY_LINE_WIDTH = 128
+PE_CONFIG_PAYLOAD_WIDTH = 108
 HALF_LINE_WIDTH = 64
 PE_PREFIX = "001"
 FILLER_LINE = "1" * BINARY_LINE_WIDTH
+
+# According to the PE bit-field definition, pool_size is stored in bits 18:15
+# of the 108-bit PE payload. Pool tasks should expose an actual pooling window
+# size there, while the non-pooling tasks in the current executable format do not.
+POOL_SIZE_HIGH_BIT = 18
+POOL_SIZE_LOW_BIT = 15
+POOL_SIZE_MIN = 2
+POOL_SIZE_MAX = 7
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,26 @@ def _extract_task_pe_lines(lines: list[str], descriptor: TaskDescriptor) -> list
     return pe_lines
 
 
+def _extract_pe_field_value(line: str, high_bit: int, low_bit: int) -> int:
+    if len(line) != BINARY_LINE_WIDTH:
+        raise ValueError(f"Expected a 128-bit PE line, got {len(line)} bits")
+    if not (0 <= low_bit <= high_bit < PE_CONFIG_PAYLOAD_WIDTH):
+        raise ValueError(f"Invalid PE field range: {high_bit}:{low_bit}")
+
+    payload = line[-PE_CONFIG_PAYLOAD_WIDTH:]
+    start_idx = PE_CONFIG_PAYLOAD_WIDTH - 1 - high_bit
+    end_idx = PE_CONFIG_PAYLOAD_WIDTH - low_bit
+    return int(payload[start_idx:end_idx], 2)
+
+
+def _task_is_pooling(pe_lines: list[str]) -> bool:
+    for line in pe_lines:
+        pool_size = _extract_pe_field_value(line, POOL_SIZE_HIGH_BIT, POOL_SIZE_LOW_BIT)
+        if POOL_SIZE_MIN <= pool_size <= POOL_SIZE_MAX:
+            return True
+    return False
+
+
 def _split_pe_pair_to_four_lines(first_line: str, second_line: str) -> list[str]:
     return [
         first_line[:HALF_LINE_WIDTH],
@@ -98,34 +127,46 @@ def export_dataflow_folders(
     output_path.mkdir(parents=True, exist_ok=True)
 
     total_pe_files = 0
+    exported_task_ids: list[int] = []
+    skipped_pooling_task_ids: list[int] = []
+
     for descriptor in descriptors:
+        pe_lines = _extract_task_pe_lines(lines, descriptor)
+        if _task_is_pooling(pe_lines):
+            skipped_pooling_task_ids.append(descriptor.task_id)
+            continue
+
         task_dir = output_path / str(descriptor.task_id)
         dataflow_dir = task_dir / "dataflow"
         insflow_dir = task_dir / "insflow"
         dataflow_dir.mkdir(parents=True, exist_ok=True)
         insflow_dir.mkdir(parents=True, exist_ok=True)
 
-        pe_lines = _extract_task_pe_lines(lines, descriptor)
         for pe_index in range(0, len(pe_lines), 2):
             file_path = dataflow_dir / f"PE{pe_index // 2:02d}.txt"
             output_lines = _split_pe_pair_to_four_lines(pe_lines[pe_index], pe_lines[pe_index + 1])
             file_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
             total_pe_files += 1
 
-    print(f"Dataflow 拆分完成: {output_path}")
-    print(f"共导出 {len(descriptors)} 个任务，{total_pe_files} 个 PE 文件")
+        exported_task_ids.append(descriptor.task_id)
+
+    print(f"Dataflow split completed: {output_path}")
+    print(f"Exported {len(exported_task_ids)} tasks and {total_pe_files} PE files")
+    if skipped_pooling_task_ids:
+        skipped_list = ", ".join(str(task_id) for task_id in skipped_pooling_task_ids)
+        print(f"Skipped pooling tasks: {skipped_list}")
     return output_path
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="将 final_executable_config.txt 拆分为任务 dataflow 文件夹。")
-    parser.add_argument("final_config_file", help="final_executable_config.txt 的路径")
-    parser.add_argument("output_root", help="拆分输出目录")
+    parser = argparse.ArgumentParser(description="Split final_executable_config.txt into task dataflow folders")
+    parser.add_argument("final_config_file", help="Path to final_executable_config.txt")
+    parser.add_argument("output_root", help="Output directory for the split task folders")
     parser.add_argument(
         "--task-index-start-line",
         type=int,
         default=TASK_INDEX_START_LINE,
-        help="任务索引表起始行（1-based），默认 513",
+        help="1-based start line of the task index table, default is 513",
     )
     return parser
 
