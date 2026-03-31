@@ -127,7 +127,7 @@ def export_dataflow_folders(
     output_path.mkdir(parents=True, exist_ok=True)
 
     total_pe_files = 0
-    exported_task_ids: list[int] = []
+    exported_task_mappings: list[tuple[int, int]] = []
     skipped_pooling_task_ids: list[int] = []
 
     for descriptor in descriptors:
@@ -136,7 +136,8 @@ def export_dataflow_folders(
             skipped_pooling_task_ids.append(descriptor.task_id)
             continue
 
-        task_dir = output_path / str(descriptor.task_id)
+        exported_task_id = len(exported_task_mappings) + 1
+        task_dir = output_path / str(exported_task_id)
         dataflow_dir = task_dir / "dataflow"
         insflow_dir = task_dir / "insflow"
         dataflow_dir.mkdir(parents=True, exist_ok=True)
@@ -148,10 +149,16 @@ def export_dataflow_folders(
             file_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
             total_pe_files += 1
 
-        exported_task_ids.append(descriptor.task_id)
+        exported_task_mappings.append((exported_task_id, descriptor.task_id))
 
     print(f"Dataflow split completed: {output_path}")
-    print(f"Exported {len(exported_task_ids)} tasks and {total_pe_files} PE files")
+    print(f"Exported {len(exported_task_mappings)} tasks and {total_pe_files} PE files")
+    if exported_task_mappings:
+        mapping_text = ", ".join(
+            f"{exported_task_id}->{original_task_id}"
+            for exported_task_id, original_task_id in exported_task_mappings
+        )
+        print(f"Export task mapping: {mapping_text}")
     if skipped_pooling_task_ids:
         skipped_list = ", ".join(str(task_id) for task_id in skipped_pooling_task_ids)
         print(f"Skipped pooling tasks: {skipped_list}")
