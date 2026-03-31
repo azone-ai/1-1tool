@@ -8,6 +8,7 @@ from . import stage2_control_generator
 from . import stage3_data_linker
 from . import stage4_address_modifier
 from . import stage6_dataflow_exporter
+from . import stage7_link_input_packager
 
 
 def run_pipeline(
@@ -16,9 +17,10 @@ def run_pipeline(
     data_db_root: str | None = None,
     output_dir: str | None = None,
     split_output_dir: str | None = None,
+    link_input_dir: str | None = None,
 ) -> str:
     """
-    运行工具链主流程，并自动导出拆分后的 PE dataflow 文件夹。
+    Run the toolchain pipeline, split PE dataflow, and package link inputs.
     """
     base_dir = Path(__file__).resolve().parent
 
@@ -27,6 +29,7 @@ def run_pipeline(
     data_db_root_resolved = str(Path(data_db_root) if data_db_root else base_dir / "Data_Library")
     output_dir_resolved = Path(output_dir) if output_dir else base_dir / "pipeline_output"
     split_output_dir_resolved = Path(split_output_dir) if split_output_dir else output_dir_resolved / "final_executable_config_split"
+    link_input_dir_resolved = Path(link_input_dir) if link_input_dir else output_dir_resolved / "link_input"
 
     original_task_file = os.path.join(output_dir_resolved, "1_original_tasks.txt")
     aligned_task_file = os.path.join(output_dir_resolved, "1_aligned_tasks.txt")
@@ -73,12 +76,19 @@ def run_pipeline(
             output_root=split_output_dir_resolved,
         )
 
-        print(f"最终可执行激励文件位于: {final_output_file}")
-        print(f"拆分后的 PE dataflow 位于: {split_output_dir_resolved}")
+        stage7_link_input_packager.prepare_link_input_bundle(
+            final_config_file=final_output_file,
+            split_output_dir=split_output_dir_resolved,
+            bundle_dir=link_input_dir_resolved,
+        )
+
+        print(f"Final executable config written to: {final_output_file}")
+        print(f"Split PE dataflow written to: {split_output_dir_resolved}")
+        print(f"Link input bundle written to: {link_input_dir_resolved}")
         return final_output_file
 
     except Exception as exc:
-        raise RuntimeError(f"工具链运行失败: {exc}") from exc
+        raise RuntimeError(f"Toolchain pipeline failed: {exc}") from exc
 
 
 if __name__ == "__main__":
