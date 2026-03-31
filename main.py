@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import shutil
 from pathlib import Path
 
@@ -26,6 +28,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--converted-json-output",
         help="Optional output path for the JSON converted from ONNX. Only used when the input model is .onnx.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print detailed stage logs and intermediate output information.",
     )
     return parser
 
@@ -67,6 +74,21 @@ def _prepare_input_json(
     raise ValueError(f"Unsupported input model format: {input_model_path.suffix}")
 
 
+def _run_with_optional_stdout_capture(action, verbose: bool):
+    if verbose:
+        return action()
+
+    captured_stdout = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(captured_stdout):
+            return action()
+    except Exception:
+        captured_output = captured_stdout.getvalue().strip()
+        if captured_output:
+            print(captured_output)
+        raise
+
+
 def main() -> None:
     args = _build_arg_parser().parse_args()
     base_dir = Path(__file__).resolve().parent
@@ -75,11 +97,13 @@ def main() -> None:
 
     if args.input_final_config:
         original_final_config = Path(args.input_final_config).expanduser().resolve()
-        final_file = process_existing_final_config(final_config_file=original_final_config)
+        final_file = _run_with_optional_stdout_capture(
+            lambda: process_existing_final_config(final_config_file=original_final_config),
+            verbose=args.verbose,
+        )
         print("Parsing and validation completed")
         print("Input source type: final_config")
         print(f"Input final executable config: {original_final_config}")
-        print("Upstream graph conversion and mapping pipeline skipped")
         print(f"Final executable config: {Path(final_file).relative_to(base_dir)}")
         print(f"Split PE dataflow: {split_output_dir.relative_to(base_dir)}")
         print(f"Link input bundle: {link_input_dir.relative_to(base_dir)}")
@@ -94,30 +118,32 @@ def main() -> None:
     ir_txt = base_dir / "data" / "intermediate" / "graph_ir.txt"
     output_json = base_dir / "data" / "output" / "graph.json"
 
-    graph = build_and_generate_ir(str(input_json), str(ir_txt))
-    txt_to_json(str(ir_txt), str(output_json))
+    def _execute_model_pipeline() -> tuple[object, str]:
+        graph = build_and_generate_ir(str(input_json), str(ir_txt))
+        txt_to_json(str(ir_txt), str(output_json))
 
-    toolchain_network = base_dir / "toolchain" / "network_structure.json"
-    shutil.copyfile(output_json, toolchain_network)
+        toolchain_network = base_dir / "toolchain" / "network_structure.json"
+        shutil.copyfile(output_json, toolchain_network)
 
-    final_file = run_pipeline(
-        network_path=str(toolchain_network),
-        op_library_path=str(base_dir / "toolchain" / "Op_Library"),
-        data_db_root=str(base_dir / "toolchain" / "Data_Library"),
-        output_dir=str(base_dir / "toolchain" / "pipeline_output"),
+        final_file = run_pipeline(
+            network_path=str(toolchain_network),
+            op_library_path=str(base_dir / "toolchain" / "Op_Library"),
+            data_db_root=str(base_dir / "toolchain" / "Data_Library"),
+            output_dir=str(base_dir / "toolchain" / "pipeline_output"),
+        )
+        return graph, final_file
+
+    graph, final_file = _run_with_optional_stdout_capture(
+        _execute_model_pipeline,
+        verbose=args.verbose,
     )
 
     print("Parsing and validation completed")
     print(f"Input source type: {input_source_type}")
     if original_input_model is not None:
         print(f"Input ONNX: {original_input_model}")
-        print(f"Converted ONNX JSON: {input_json}")
     else:
         print(f"Input JSON: {input_json}")
-    print(f"Operator count: {len(graph.operators)}")
-    print(f"Intermediate IR: {ir_txt.relative_to(base_dir)}")
-    print(f"Converted JSON: {output_json.relative_to(base_dir)}")
-    print(f"Toolchain input: {toolchain_network.relative_to(base_dir)}")
     print(f"Final executable config: {Path(final_file).relative_to(base_dir)}")
     print(f"Split PE dataflow: {split_output_dir.relative_to(base_dir)}")
     print(f"Link input bundle: {link_input_dir.relative_to(base_dir)}")

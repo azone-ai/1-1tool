@@ -38,6 +38,14 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
+默认只输出关键结果路径。
+
+如果需要查看各阶段详细日志，可以使用：
+
+```bash
+python main.py --verbose
+```
+
 ## 输入说明
 
 当前代码支持 3 种输入方式。
@@ -252,4 +260,3 @@ python main.py --input-final-config "toolchain/pipeline_output/final_executable_
 - `src/converter/onnx_to_json.py`：ONNX 转 JSON
 - `src/service/pipeline.py`：计算图解析与 IR 生成
 - `toolchain/stage5_main.py`：toolchain 总流程与后处理调用
-

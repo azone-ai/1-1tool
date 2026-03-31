@@ -33,7 +33,7 @@ def _filter_pooling_fifo_entries(link_final_config_file: Path) -> list[int]:
 
     kept_fifo_entries = [
         fifo_entry
-        for fifo_entry, keep_entry in zip(fifo_entries, keep_mask, strict=False)
+        for fifo_entry, keep_entry in zip(fifo_entries, keep_mask)
         if keep_entry and fifo_entry != FILLER_LINE
     ]
 
