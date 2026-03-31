@@ -27,6 +27,7 @@ def main() -> None:
         data_db_root=str(base_dir / "toolchain" / "Data_Library"),
         output_dir=str(base_dir / "toolchain" / "pipeline_output"),
     )
+    split_output_dir = base_dir / "toolchain" / "pipeline_output" / "final_executable_config_split"
 
     print("解析与校验通过")
     print(f"算子数量: {len(graph.operators)}")
@@ -34,6 +35,7 @@ def main() -> None:
     print(f"转换后 JSON 文件: {output_json.relative_to(base_dir)}")
     print(f"工具链输入文件: {toolchain_network.relative_to(base_dir)}")
     print(f"工具链最终输出: {Path(final_file).relative_to(base_dir)}")
+    print(f"PE dataflow 拆分输出: {split_output_dir.relative_to(base_dir)}")
 
 
 if __name__ == "__main__":
