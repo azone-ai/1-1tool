@@ -103,6 +103,23 @@ def _task_is_pooling(pe_lines: list[str]) -> bool:
     return False
 
 
+def find_pooling_task_ids(
+    final_config_file: str | Path,
+    task_index_start_line: int = TASK_INDEX_START_LINE,
+) -> list[int]:
+    final_path = Path(final_config_file)
+    lines = _normalize_binary_lines(final_path)
+    descriptors = parse_task_descriptors(final_path, task_index_start_line=task_index_start_line)
+
+    pooling_task_ids: list[int] = []
+    for descriptor in descriptors:
+        pe_lines = _extract_task_pe_lines(lines, descriptor)
+        if _task_is_pooling(pe_lines):
+            pooling_task_ids.append(descriptor.task_id)
+
+    return pooling_task_ids
+
+
 def _split_pe_pair_to_four_lines(first_line: str, second_line: str) -> list[str]:
     return [
         first_line[:HALF_LINE_WIDTH],
